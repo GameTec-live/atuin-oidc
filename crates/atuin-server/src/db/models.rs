@@ -70,6 +70,15 @@ static ARGON2_POOL: LazyLock<BlockingPool> = LazyLock::new(|| {
 pub struct HashedPassword(String);
 
 impl HashedPassword {
+    /// OIDC accounts have no password. The full identity digest also detects name collisions.
+    pub(crate) fn oidc(identity: &str) -> Self {
+        Self(format!("!oidc:{identity}"))
+    }
+
+    pub(crate) fn matches_oidc(&self, identity: &str) -> bool {
+        self.0 == format!("!oidc:{identity}")
+    }
+
     /// Hash `password` with a fresh salt.
     pub async fn new(password: SecretString) -> Self {
         ARGON2_POOL

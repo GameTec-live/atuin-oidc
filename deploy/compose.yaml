@@ -1,0 +1,25 @@
+services:
+  atuin:
+    build:
+      context: ..
+      dockerfile: Dockerfile.oidc
+    image: atuin-oidc:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8888"
+    volumes:
+      - data:/config
+      - ./server.toml:/config/server.toml:ro
+    secrets:
+      - oidc-client-secret
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+secrets:
+  oidc-client-secret:
+    file: ./oidc-client-secret
+
+volumes:
+  data:

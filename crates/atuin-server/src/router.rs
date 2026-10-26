@@ -20,6 +20,7 @@ use crate::db::models::User;
 use crate::db::{DbError, DynDatabase};
 use crate::handlers::{ErrorResponseStatus, RespExt};
 use crate::metrics;
+use crate::oidc::Oidc;
 use crate::settings::Settings;
 
 pub struct UserAuth(pub User);
@@ -48,7 +49,15 @@ impl FromRequestParts<AppState> for UserAuth {
                 .with_status(http::StatusCode::BAD_REQUEST)
         })?;
 
-        if typ != "Token" {
+        if state.oidc.is_some() {
+            if !typ.eq_ignore_ascii_case("Bearer") {
+                return Err(ErrorResponse::reply("OIDC requires Bearer authentication")
+                    .with_status(http::StatusCode::UNAUTHORIZED));
+            }
+            return crate::oidc::authenticate(state.database.as_ref(), token).await.map(Self);
+        }
+
+        if typ != "Token" || token.starts_with("oidc:") {
             tracing::debug!(scheme = typ, "unsupported authorization scheme");
             return Err(ErrorResponse::reply("invalid authorization header encoding")
                 .with_status(http::StatusCode::BAD_REQUEST));
@@ -101,6 +110,7 @@ async fn semver(request: Request, next: Next) -> Response {
 pub struct AppState {
     pub database: Arc<dyn DynDatabase>,
     pub settings: Settings,
+    pub oidc: Option<Arc<Oidc>>,
 }
 
 fn capabilities() -> CapServer {
@@ -114,23 +124,34 @@ fn capabilities() -> CapServer {
         .expect("PageSizeCap is registered exactly once")
 }
 
-pub fn router(database: Arc<dyn DynDatabase>, settings: Settings) -> Router {
+pub fn router(
+    database: Arc<dyn DynDatabase>,
+    settings: Settings,
+    oidc: Option<Arc<Oidc>>,
+) -> Router {
     // Advertise the self-referential capabilities capability, so every server that speaks the
     // protocol carries at least one concrete capability a client can observe.
     let caps = Arc::new(capabilities());
+
+    let auth = if oidc.is_some() {
+        crate::oidc::routes().route("/api/v0/account", delete(handlers::user::delete))
+    } else {
+        Router::new()
+            .route("/account/password", patch(handlers::user::change_password))
+            .route("/register", post(handlers::user::register))
+            .route("/login", post(handlers::user::login))
+    };
 
     let negotiated = Router::new()
         .route("/", get(handlers::index))
         .route("/user/{username}", get(handlers::user::get))
         .route("/account", delete(handlers::user::delete))
-        .route("/account/password", patch(handlers::user::change_password))
-        .route("/register", post(handlers::user::register))
-        .route("/login", post(handlers::user::login))
         .route("/api/v0/me", get(handlers::v0::me::get))
         .route("/api/v0/record", post(handlers::v0::record::post))
         .route("/api/v0/record", get(handlers::v0::record::index))
         .route("/api/v0/record/next", get(handlers::v0::record::next))
         .route("/api/v0/store", delete(handlers::v0::store::delete))
+        .merge(auth)
         .negotiate_capabilities(caps.clone());
 
     let unnegotiated =
@@ -151,10 +172,17 @@ pub fn router(database: Arc<dyn DynDatabase>, settings: Settings) -> Router {
         Router::new().nest(path, routes)
     };
 
-    routes.fallback(teapot).with_state(AppState { database, settings }).layer(
-        ServiceBuilder::new()
-            .layer(axum::middleware::from_fn(clacks_overhead))
-            .layer(axum::middleware::from_fn(metrics::track_metrics))
-            .layer(axum::middleware::from_fn(semver)),
-    )
+    routes
+        .fallback(teapot)
+        .with_state(AppState {
+            database,
+            settings,
+            oidc,
+        })
+        .layer(
+            ServiceBuilder::new()
+                .layer(axum::middleware::from_fn(clacks_overhead))
+                .layer(axum::middleware::from_fn(metrics::track_metrics))
+                .layer(axum::middleware::from_fn(semver)),
+        )
 }

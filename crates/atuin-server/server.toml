@@ -26,3 +26,12 @@
 # enable = false
 # host = 127.0.0.1
 # port = 9001
+
+## Browser login with an OpenID Connect provider. See OIDC.md in this fork.
+## Setting this section disables password login/registration, regardless of open_registration.
+# [oidc]
+# issuer_url = "https://auth.example.com/realms/home"
+# client_id = "atuin"
+# client_secret_file = "/run/secrets/oidc-client-secret"
+# public_url = "https://atuin.example.com"
+# session_ttl_seconds = 2592000

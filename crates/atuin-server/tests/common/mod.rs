@@ -39,6 +39,7 @@ pub async fn start_server(path: &str) -> (url::Url, oneshot::Sender<()>, JoinHan
         port: 0,
         path: path.to_owned(),
         open_registration: true,
+        oidc: None,
         max_record_size: atuin_common::units::ByteSize::b(1024 * 1024 * 1024),
         register_webhook_url: None,
         register_webhook_username: String::new(),

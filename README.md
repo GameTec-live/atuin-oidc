@@ -1,3 +1,9 @@
+# Atuin with self-hosted OIDC
+
+This fork adds OpenID Connect browser login to the upstream sync server using the
+unmodified client's Hub protocol. See [OIDC.md](OIDC.md) for setup, deployment,
+security behavior, and the small patch's upstream upgrade procedure.
+
 <p align="center">
  <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/atuinsh/atuin/assets/53315310/13216a1d-1ac0-4c99-b0eb-d88290fe0efd">

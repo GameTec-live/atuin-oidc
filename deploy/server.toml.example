@@ -1,0 +1,12 @@
+host = "0.0.0.0"
+port = 8888
+db_uri = "sqlite:///config/atuin.db"
+open_registration = false
+
+[oidc]
+# Copy the exact issuer from your provider's discovery document, including any trailing slash.
+issuer_url = "https://auth.example.com/realms/home"
+client_id = "atuin"
+client_secret_file = "/run/secrets/oidc-client-secret"
+public_url = "https://atuin.example.com"
+session_ttl_seconds = 2592000 # 30 days

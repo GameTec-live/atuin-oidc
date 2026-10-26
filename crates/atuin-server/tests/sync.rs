@@ -81,6 +81,7 @@ async fn server() -> TestServer {
         port: 0,
         path: String::new(),
         open_registration: true,
+        oidc: None,
         max_record_size: atuin_common::units::ByteSize::b(1024 * 1024 * 1024),
         register_webhook_url: None,
         register_webhook_username: String::new(),

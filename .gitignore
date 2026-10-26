@@ -27,3 +27,7 @@ test-behavior.sh
 /.vale/styles/*
 !/.vale/styles/config/
 test-results/
+
+# Local OIDC deployment configuration and credentials.
+/deploy/server.toml
+/deploy/oidc-client-secret

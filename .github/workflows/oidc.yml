@@ -1,0 +1,26 @@
+name: OIDC server
+on:
+  push:
+    branches: [oidc]
+  pull_request:
+    branches: [oidc]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked -p atuin-server --lib
+      - run: cargo test --locked -p atuin-server --test sync
+      - run: cargo clippy --locked -p atuin-server --all-targets -- -D warnings
+      - run: cargo doc --locked -p atuin-server --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: docker build -f Dockerfile.oidc -t atuin-oidc:test .
+      - run: docker run --rm atuin-oidc:test --version

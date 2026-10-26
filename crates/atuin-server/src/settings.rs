@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::db::DbSettings;
+pub use crate::oidc::OidcSettings;
 
 static EXAMPLE_CONFIG: &str = include_str!("../server.toml");
 
@@ -38,6 +39,8 @@ pub struct Settings {
     pub port: u16,
     pub path: String,
     pub open_registration: bool,
+    #[serde(default)]
+    pub oidc: Option<OidcSettings>,
     pub max_record_size: ByteSize,
     pub register_webhook_url: Option<url::Url>,
     pub register_webhook_username: String,
@@ -231,5 +234,22 @@ mod tests {
         let err = Settings::load(&config_dir.path().join("server.toml"), Some(env)).unwrap_err();
 
         assert!(err.to_string().contains("key `port`"), "{err}");
+    }
+
+    #[rstest]
+    fn oidc_settings_load_from_environment_with_safe_defaults(config_dir: TempDir) {
+        let env = Map::from([
+            ("ATUIN_OIDC__ISSUER_URL".into(), "https://issuer.example".into()),
+            ("ATUIN_OIDC__CLIENT_ID".into(), "atuin".into()),
+            ("ATUIN_OIDC__PUBLIC_URL".into(), "https://atuin.example".into()),
+            ("ATUIN_OIDC__CLIENT_SECRET".into(), "private-client-secret".into()),
+        ]);
+        let settings = Settings::load(&config_dir.path().join("server.toml"), Some(env)).unwrap();
+        let oidc = settings.oidc.unwrap();
+        assert_eq!(oidc.issuer_url.as_str(), "https://issuer.example");
+        assert_eq!(oidc.session_ttl_seconds, 30 * 24 * 60 * 60);
+        assert_eq!(oidc.max_pending_logins, 1024);
+        assert!(!oidc.allow_http);
+        assert!(!format!("{oidc:?}").contains("private-client-secret"));
     }
 }

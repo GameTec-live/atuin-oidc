@@ -39,11 +39,14 @@ eyre = { workspace = true }
 fs-err = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+openidconnect = { version = "4", default-features = false }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rpassword = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
+sha2 = { workspace = true }
 sqlx = { workspace = true, features = ["postgres", "sqlite", "mysql", "regexp", "tls-native-tls"] }
 thiserror = { workspace = true }
 time = { workspace = true }
@@ -60,15 +63,18 @@ uuid = { workspace = true }
 # binary crate stays free of server/postgres deps (see issue #2884).
 [dev-dependencies]
 # TODO(taylordotfish): in Rust 1.99 we can change this to `workspace = true`
-atuin-client = { path = "../atuin-client", version = "18.24.2", default-features = false, features = ["sync"] }
+atuin-client = { path = "../atuin-client", version = "18.24.2", default-features = false, features = ["sync", "hub"] }
+chrono = { workspace = true }
 futures-util = { workspace = true }
 percent-encoding = { workspace = true }
 proptest = { workspace = true }
 regex = { workspace = true }
 rstest = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tracing-tree = { workspace = true }
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

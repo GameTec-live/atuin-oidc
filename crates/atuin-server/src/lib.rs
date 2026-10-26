@@ -12,6 +12,7 @@ use crate::db::{Database, DbResult, DynDatabase, MySql, Postgres, Sqlite};
 
 mod handlers;
 mod metrics;
+mod oidc;
 mod router;
 mod trace;
 
@@ -81,7 +82,11 @@ async fn connect_and_build_router(settings: Settings) -> Result<Router> {
         .await
         .wrap_err_with(|| format!("failed to connect to db: {:?}", settings.db_settings))?;
 
-    Ok(router::router(database, settings))
+    let oidc = match &settings.oidc {
+        Some(config) => Some(Arc::new(oidc::Oidc::discover(config, &settings.path).await?)),
+        None => None,
+    };
+    Ok(router::router(database, settings, oidc))
 }
 
 // The separate listener means it's much easier to ensure metrics are not accidentally exposed to
