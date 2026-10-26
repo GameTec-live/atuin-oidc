@@ -7,6 +7,8 @@ use atuin_client::record::sync::{ClientSource, SyncError, SyncSession};
 use atuin_client::settings::{Settings, SyncAuth};
 use atuin_common::encryption::paseto_v4;
 use atuin_common::env::var_nonempty;
+#[cfg(feature = "daemon")]
+use atuin_daemon::service::ActiveService;
 use clap::Parser;
 use eyre::{Context, Result, bail};
 use rpassword::prompt_password;
@@ -277,6 +279,16 @@ async fn store_key(settings: &Settings, store: &SqliteStore, key: &paseto_v4::Ke
         return Ok(());
     }
 
+    // The daemon holds the key in memory, so stop it before it writes records under the old one
+    // while the store is rewritten, and start it again once the new key is written. A daemon systemd
+    // or launchd runs can't be stopped from here, only restarted after.
+    #[cfg(feature = "daemon")]
+    if settings.daemon.enabled
+        && let Ok(Some(daemon)) = ActiveService::find(settings).await
+    {
+        let _ = daemon.stop().await;
+    }
+
     println!("\n{}", fl!("login-reencrypting"));
     store.re_encrypt(&current_key, key).await?;
     crate::command::client::store::invalidate_ai_sessions(settings).await;
@@ -284,6 +296,26 @@ async fn store_key(settings: &Settings, store: &SqliteStore, key: &paseto_v4::Ke
     println!("{}", fl!("login-writing-key"));
     key.overwrite_path(key_path)?;
 
+    #[cfg(feature = "daemon")]
+    if settings.daemon.enabled {
+        println!("{}", fl!("login-starting-daemon"));
+        if let Err(e) = start_daemon(settings).await {
+            eprintln!("{}", fl!("login-daemon-start-failed", error = format!("{e:#}")));
+        }
+    }
+
+    Ok(())
+}
+
+/// Start the daemon on the new key, restarting one a shell hook may have started on the old key
+/// while it was stopped.
+#[cfg(feature = "daemon")]
+async fn start_daemon(settings: &Settings) -> Result<()> {
+    if let Some(daemon) = ActiveService::find(settings).await? {
+        daemon.restart().await?;
+    } else {
+        ActiveService::find_or_spawn(settings).await?;
+    }
     Ok(())
 }
 
