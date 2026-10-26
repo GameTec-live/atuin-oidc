@@ -1,6 +1,6 @@
 //! Hub-compatible browser login backed by a single OpenID Connect provider.
 //!
-//! Users and hashed, expiring sessions reuse upstream storage. Only the short-lived
+//! Users and hashed sessions reuse upstream storage. Only the short-lived
 //! browser handshakes live in memory, so deployments use one server process.
 
 use std::collections::HashMap;
@@ -50,17 +50,14 @@ pub struct OidcSettings {
     pub client_secret_file: Option<PathBuf>,
     #[serde(default)]
     pub scopes: Vec<String>,
-    #[serde(default = "default_session_ttl")]
+    /// Absolute session lifetime in seconds. Zero (the default) disables expiration.
+    #[serde(default)]
     pub session_ttl_seconds: u32,
     #[serde(default = "default_max_pending")]
     pub max_pending_logins: usize,
     /// For local development only. Production uses HTTPS for all provider URLs.
     #[serde(default)]
     pub allow_http: bool,
-}
-
-const fn default_session_ttl() -> u32 {
-    30 * 24 * 60 * 60
 }
 
 const fn default_max_pending() -> usize {
@@ -119,7 +116,6 @@ fn invalid_login() -> ErrorResponseStatus<'static> {
 
 impl Oidc {
     pub(crate) async fn discover(settings: &OidcSettings, path: &str) -> Result<Self> {
-        ensure!(settings.session_ttl_seconds > 0, "OIDC session_ttl_seconds must be positive");
         ensure!(settings.max_pending_logins > 0, "OIDC max_pending_logins must be positive");
         ensure!(!settings.client_id.is_empty(), "OIDC client_id must not be empty");
         ensure!(
@@ -523,15 +519,19 @@ fn identity_digest(issuer: &str, subject: &str) -> String {
 }
 
 fn new_session_token(ttl: u32) -> SecretString {
-    let expires = OffsetDateTime::now_utc().unix_timestamp() + i64::from(ttl);
+    let expires = if ttl == 0 {
+        0
+    } else {
+        OffsetDateTime::now_utc().unix_timestamp() + i64::from(ttl)
+    };
     format!("atapi_{expires}_{}", crypto_random_string::<32>().expose_secret()).into()
 }
 
-/// The expiration is covered by the digest stored in the DB, so editing it invalidates the token.
+/// Zero means no expiration. The digest covers this field, so editing it invalidates the token.
 fn session_key(token: &str) -> Option<SecretString> {
     let (expires, secret) = token.strip_prefix("atapi_")?.split_once('_')?;
-    if secret.len() != 43
-        || expires.parse::<i64>().ok()? <= OffsetDateTime::now_utc().unix_timestamp()
+    let expires = expires.parse::<i64>().ok()?;
+    if secret.len() != 43 || (expires != 0 && expires <= OffsetDateTime::now_utc().unix_timestamp())
     {
         return None;
     }

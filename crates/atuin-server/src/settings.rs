@@ -237,17 +237,27 @@ mod tests {
     }
 
     #[rstest]
-    fn oidc_settings_load_from_environment_with_safe_defaults(config_dir: TempDir) {
-        let env = Map::from([
+    #[case::default(None, 0)]
+    #[case::expiration_disabled(Some("0"), 0)]
+    #[case::expiration_enabled(Some("3600"), 3600)]
+    fn oidc_settings_load_from_environment_with_safe_defaults(
+        config_dir: TempDir,
+        #[case] session_ttl: Option<&str>,
+        #[case] expected_ttl: u32,
+    ) {
+        let mut env = Map::from([
             ("ATUIN_OIDC__ISSUER_URL".into(), "https://issuer.example".into()),
             ("ATUIN_OIDC__CLIENT_ID".into(), "atuin".into()),
             ("ATUIN_OIDC__PUBLIC_URL".into(), "https://atuin.example".into()),
             ("ATUIN_OIDC__CLIENT_SECRET".into(), "private-client-secret".into()),
         ]);
+        if let Some(ttl) = session_ttl {
+            env.insert("ATUIN_OIDC__SESSION_TTL_SECONDS".into(), ttl.into());
+        }
         let settings = Settings::load(&config_dir.path().join("server.toml"), Some(env)).unwrap();
         let oidc = settings.oidc.unwrap();
         assert_eq!(oidc.issuer_url.as_str(), "https://issuer.example");
-        assert_eq!(oidc.session_ttl_seconds, 30 * 24 * 60 * 60);
+        assert_eq!(oidc.session_ttl_seconds, expected_ttl);
         assert_eq!(oidc.max_pending_logins, 1024);
         assert!(!oidc.allow_http);
         assert!(!format!("{oidc:?}").contains("private-client-secret"));

@@ -43,7 +43,7 @@ issuer_url = "https://auth.example.com/realms/home"
 client_id = "atuin"
 client_secret_file = "/run/secrets/oidc-client-secret"
 public_url = "https://atuin.example.com"
-session_ttl_seconds = 2592000 # 30 days
+session_ttl_seconds = 0 # no expiration (default)
 ```
 
 The secret file contains the client secret alone; a trailing newline is allowed.
@@ -70,6 +70,9 @@ For a prefix, set `path = "/atuin"` on the server and use
 
 Additional settings under `[oidc]`:
 
+- `session_ttl_seconds = 0`: no expiration, matching upstream password sessions.
+  Omit this setting for the same default. Set a positive value to enable an absolute
+  lifetime, for example `2592000` for 30 days; syncing does not extend it.
 - `scopes = ["profile"]`: optional extra scopes; `openid` is always included.
 - `max_pending_logins = 1024`: maximum in-memory handshakes. Expired entries are
   reclaimed when new logins start; handshakes expire after ten minutes.
@@ -140,14 +143,22 @@ Do not run `admin user set-password` on OIDC accounts: it replaces their identit
 marker and prevents subsequent OIDC login.
 
 Atuin sessions are local, random bearer credentials beginning with `atapi_`.
-Only SHA-256 digests are stored in the existing session table. Expiration is bound
+Only SHA-256 digests are stored in the existing session table. Sessions do not
+expire by default. An optional expiration (or the no-expiration marker) is bound
 to that digest, so changing a token's expiration invalidates it. Provider tokens
 are discarded after ID-token validation; the server neither stores refresh tokens
 nor sends provider access tokens to the CLI. Sessions survive server restarts and
-work while the provider is unavailable, until they expire.
+work while the provider is unavailable, subject to any configured expiration.
+
+The lifetime setting affects newly issued sessions. Existing tokens keep their
+original expiration, including tokens issued with the previous 30-day default.
+To replace one with a non-expiring session, set `session_ttl_seconds = 0` (or remove
+the setting), restart the server, and run `atuin logout` followed by `atuin login`
+once on each device. Expired tokens are not revived by changing the setting.
 
 Disabling a provider account prevents new logins, but does not revoke existing
-Atuin sessions. Choose a shorter `session_ttl_seconds` if needed. To revoke all
+Atuin sessions. Set a positive `session_ttl_seconds` if periodic reauthentication
+is desired. To revoke all
 devices for one account immediately, execute this against the Atuin database:
 
 ```sql
@@ -185,7 +196,7 @@ git switch oidc
 git rebase --onto <new-upstream-tag-or-commit> b138f6c75c9f5d3d34566c518109b23844240e64
 ```
 
-Alternatively export just the fork commit with `git format-patch` and apply it to
+Alternatively export the fork commits with `git format-patch` and apply them to
 a fresh upstream checkout using `git am -3`. Reconcile the router/startup/settings
 integration if upstream changes those interfaces, and update the base revision
 recorded here. Do not squash upstream database migrations into the patch.

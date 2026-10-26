@@ -53,7 +53,7 @@ impl Drop for Environment {
 }
 
 impl Environment {
-    async fn new(prefix: &str) -> Self {
+    async fn new(prefix: &str, session_ttl_seconds: u32) -> Self {
         let provider = MockServer::start().await;
         Mock::given(path("/.well-known/openid-configuration"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -84,7 +84,7 @@ impl Environment {
             client_secret: Some("test-secret".into()),
             client_secret_file: None,
             scopes: vec!["profile".into()],
-            session_ttl_seconds: 3600,
+            session_ttl_seconds,
             max_pending_logins: 8,
             allow_http: true,
         };
@@ -312,15 +312,18 @@ fn approval_state(html: &str) -> String {
 
 #[fixture]
 async fn environment() -> Environment {
-    Environment::new("").await
+    Environment::new("", 0).await
 }
 
 #[rstest]
 #[case("")]
 #[case("/atuin")]
 #[tokio::test]
-async fn unmodified_hub_client_logs_in_and_syncs_with_isolated_accounts(#[case] prefix: &str) {
-    let env = Environment::new(prefix).await;
+async fn unmodified_hub_client_logs_in_and_syncs_with_isolated_accounts(
+    #[case] prefix: &str,
+    #[values(0, 3600)] session_ttl_seconds: u32,
+) {
+    let env = Environment::new(prefix, session_ttl_seconds).await;
     let alice = env.login("alice").await;
     let key = session_key(alice.expose_secret()).unwrap();
     assert!(!key.expose_secret().contains(alice.expose_secret()));
@@ -468,8 +471,9 @@ async fn oidc_mode_does_not_expose_password_auth(
 #[rstest]
 #[tokio::test]
 async fn session_hashes_expiry_and_auth_schemes_are_enforced(
-    #[future(awt)] environment: Environment,
+    #[values(0, 3600)] session_ttl_seconds: u32,
 ) {
+    let environment = Environment::new("", session_ttl_seconds).await;
     let env = &environment;
     let token = env.login("alice").await;
     let stored = session_key(token.expose_secret()).unwrap();
@@ -483,7 +487,15 @@ async fn session_hashes_expiry_and_auth_schemes_are_enforced(
         })
         .await
         .unwrap();
-    let tampered = token.expose_secret().replacen("atapi_", "atapi_9", 1);
+    let (_, secret) =
+        token.expose_secret().strip_prefix("atapi_").unwrap().split_once('_').unwrap();
+    // Neither removing an expiration nor adding one can preserve the token's stored digest.
+    let tampered_expiry = if session_ttl_seconds == 0 {
+        OffsetDateTime::now_utc().unix_timestamp() + 3600
+    } else {
+        0
+    };
+    let tampered = format!("atapi_{tampered_expiry}_{secret}");
     for header in [
         format!("Token {}", token.expose_secret()),
         format!("Bearer {}", stored.expose_secret()),
