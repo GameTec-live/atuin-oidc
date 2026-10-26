@@ -88,16 +88,31 @@ cargo build --locked --release -p atuin-server
 ATUIN_CONFIG_DIR=/path/to/config target/release/atuin-server start
 ```
 
-Or use the supplied Docker Compose deployment:
+Or use the supplied Docker Compose deployment with the published server image:
 
 ```sh
 cp deploy/server.toml.example deploy/server.toml
 # Edit deploy/server.toml; create deploy/oidc-client-secret privately.
-docker compose -f deploy/compose.yaml up -d --build
+docker compose -f deploy/compose.yaml pull
+docker compose -f deploy/compose.yaml up -d
 ```
 
+GitHub Actions builds and publishes `ghcr.io/gametec-live/atuin-oidc` for Linux
+amd64 and arm64 after the server tests pass. `latest` and `oidc` follow the `oidc`
+branch; `sha-<full-commit-sha>` selects a revision. Pin a digest for an exact image.
+Pull requests build and test images but cannot publish. The **OIDC server** workflow
+also supports manual runs to rebuild the current revision. No registry credentials
+are required to pull the public images.
+
 The Compose deployment uses SQLite in a named volume and publishes port 8888 on
-loopback for a local reverse proxy. `Dockerfile.oidc` builds only the server into a
+loopback for a local reverse proxy. Update using `docker compose -f deploy/compose.yaml
+pull` followed by `docker compose -f deploy/compose.yaml up -d`; keep the data volume.
+For a proxy running in Docker, connect it to the same Docker network and forward to
+`http://atuin:8888` instead of the host's loopback address.
+
+To build an image yourself, run `docker build -f Dockerfile.oidc -t atuin-oidc:local .`
+and set the Compose service's `image` to `atuin-oidc:local`.
+`Dockerfile.oidc` builds only the server into a
 `scratch` image containing its static binary and CA certificates, running as UID
 65532. The original upstream Dockerfile is unchanged. PostgreSQL and MySQL remain
 available through upstream's `db_uri` setting; the integration uses its existing

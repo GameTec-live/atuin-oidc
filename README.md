@@ -1,8 +1,107 @@
 # Atuin with self-hosted OIDC
 
 This fork adds OpenID Connect browser login to the upstream sync server using the
-unmodified client's Hub protocol. See [OIDC.md](OIDC.md) for setup, deployment,
-security behavior, and the small patch's upstream upgrade procedure.
+unmodified client's Hub protocol. GitHub Actions publishes server images for
+**Linux amd64 and arm64** to `ghcr.io/gametec-live/atuin-oidc:latest` after tests pass.
+You do not need Rust or a local image build to run the server.
+
+## Quickstart with Docker Compose
+
+1. Create an OIDC application in your provider. Enable **Authorization Code** and
+   **PKCE S256**, allow the `openid` scope, and use `client_secret_basic` for client
+   authentication. Register this exact callback:
+   `https://atuin.example.com/auth/cli/callback`. Restrict who can access the
+   application using your provider's users/groups policy.
+2. Create a directory containing `compose.yaml`, `server.toml`, and
+   `oidc-client-secret` using the examples below. The secret file contains your
+   provider's client secret alone. Replace the example URLs and client ID.
+3. Put the server behind your HTTPS reverse proxy, forwarding
+   `https://atuin.example.com` to `http://127.0.0.1:8888`. Preserve all paths and query
+   strings, and omit `/auth/cli*` query strings from access logs.
+
+`compose.yaml`:
+
+```yaml
+services:
+  atuin:
+    image: ghcr.io/gametec-live/atuin-oidc:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8888"
+    volumes:
+      - data:/config
+      - ./server.toml:/config/server.toml:ro
+    secrets:
+      - oidc-client-secret
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+secrets:
+  oidc-client-secret:
+    file: ./oidc-client-secret
+
+volumes:
+  data:
+```
+
+`server.toml`:
+
+```toml
+host = "0.0.0.0"
+port = 8888
+db_uri = "sqlite:///config/atuin.db"
+open_registration = false
+
+[oidc]
+# Exact issuer from your provider's discovery document, including any trailing slash.
+issuer_url = "https://auth.example.com/realms/home"
+client_id = "atuin"
+client_secret_file = "/run/secrets/oidc-client-secret"
+public_url = "https://atuin.example.com"
+session_ttl_seconds = 0 # no expiration (default)
+```
+
+If your reverse proxy runs in Docker, connect it to the same Docker network and
+route to `http://atuin:8888` instead of
+the host's loopback address. The Compose service supports the usual additional
+`networks` configuration for your proxy.
+
+Run the server:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+The `data` volume persists the SQLite database. Keep it when updating:
+`docker compose pull && docker compose up -d`. The same Compose and server settings
+are available in [`deploy/`](deploy/) if you prefer cloning this repository.
+
+On each client, set this in `~/.config/atuin/config.toml`:
+
+```toml
+sync_address = "https://atuin.example.com"
+sync_protocol = "hub"
+```
+
+Run `atuin login`, sign in with your provider, approve the terminal, then run
+`atuin sync`. Use the same Atuin encryption key on every device. Existing clients
+with credentials for another server should run `atuin logout` before logging in.
+
+OIDC mode disables password login and registration. Provider-authorized users are
+created automatically, even with `open_registration = false`. Sessions do not
+expire by default; set a positive `session_ttl_seconds` to require periodic login.
+Run one server process, since pending browser logins are kept in memory.
+
+The `latest` and `oidc` image tags follow successful builds of the `oidc` branch.
+Use `sha-<full-commit-sha>` to select a specific fork revision, or pin an image
+digest to keep the exact same image. Pull requests build and test images without
+publishing. The **OIDC server** workflow can also be run manually to rebuild images.
+
+See [OIDC.md](OIDC.md) for provider options, session revocation, source builds,
+deployment details, and the small patch's upstream upgrade procedure.
 
 <p align="center">
  <picture>

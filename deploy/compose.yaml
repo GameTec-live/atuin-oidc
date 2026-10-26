@@ -1,9 +1,6 @@
 services:
   atuin:
-    build:
-      context: ..
-      dockerfile: Dockerfile.oidc
-    image: atuin-oidc:local
+    image: ghcr.io/gametec-live/atuin-oidc:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:8888:8888"
