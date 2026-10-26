@@ -1364,6 +1364,16 @@ impl Message for CodexMessage {
                 | "image_generation_call"
                 | "reasoning",
             ) => Role::Assistant,
+            // The task a subagent is given is its prompt, as opencode's and Claude Code's are.
+            Some("agent_message")
+                if payload.is_some_and(|p| {
+                    p["content"][0]["text"]
+                        .as_str()
+                        .is_some_and(|text| text.starts_with("Message Type: NEW_TASK\n"))
+                }) =>
+            {
+                Role::User
+            }
             Some("agent_message") => Role::Assistant,
             Some(kind) if self.is_item() && is_opaque_item(kind) => Role::System,
             Some("function_call_output" | "custom_tool_call_output" | "tool_search_output") => {
@@ -3151,8 +3161,8 @@ mod tests {
     }
 
     /// A message from another agent (multi-agent v2, codex-rs `ResponseItem::AgentMessage`) is
-    /// the assistant's, a subagent's answer as much as a task; its encrypted payload is not kept.
-    /// From codex 0.156.1 and 0.162.1 runs.
+    /// the assistant's, such as a subagent's answer, but for the task a subagent is given, which is
+    /// its prompt; its encrypted payload is not kept. From codex 0.156.1 and 0.162.1 runs.
     #[rstest]
     #[case::new_task(serde_json::json!({
         "timestamp": "2026-09-24T02:51:10.389Z", "ordinal": 9, "type": "response_item",
@@ -3161,7 +3171,7 @@ mod tests {
                 {"type": "input_text", "text": "Message Type: NEW_TASK\nTask name: \
                     /root/helper_task\nSender: /root\nPayload:\n"},
                 {"type": "encrypted_content", "encrypted_content": "gAAAAB..."}]},
-    }), "Message Type: NEW_TASK\nTask name: /root/helper_task\nSender: /root\nPayload:\n")]
+    }), Role::User, "Message Type: NEW_TASK\nTask name: /root/helper_task\nSender: /root\nPayload:\n")]
     #[case::final_answer(serde_json::json!({
         "timestamp": "2026-10-14T16:21:01.947Z", "ordinal": 61, "type": "response_item",
         "payload": {"type": "agent_message", "id": "amsg_01a13b37-997b-72f1-96b8-a26daf79b121",
@@ -3171,17 +3181,19 @@ mod tests {
             "internal_chat_message_metadata_passthrough": {
                 "turn_id": "01a13b37-82b5-7c01-85cb-bc17a26998e1", "create_time": 1_791_994_861.9}},
         "metadata": {"client_authored": false, "user_input_order": 6},
-    }), "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/word_reply\nPayload:\nSUBMARINE")]
+    }), Role::Assistant,
+        "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/word_reply\nPayload:\nSUBMARINE")]
     #[case::inter_agent_communication(serde_json::json!({
         "type": "inter_agent_communication", "payload": {"id": "amsg_1", "author": "/root/w",
             "recipient": "/root", "other_recipients": [], "content": "done", "trigger_turn": false},
-    }), "done")]
-    fn an_agent_message_is_the_assistants_without_its_ciphertext(
+    }), Role::Assistant, "done")]
+    fn an_agent_message_is_kept_without_its_ciphertext(
         #[case] raw: serde_json::Value,
+        #[case] role: Role,
         #[case] text: &str,
     ) {
         let m = line(&raw);
-        assert_eq!(m.role(), Role::Assistant);
+        assert_eq!(m.role(), role);
         assert_eq!(m.content(), vec![Content::Text(text.to_owned())]);
     }
 
