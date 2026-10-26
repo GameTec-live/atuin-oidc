@@ -8,12 +8,13 @@ use atuin_client::settings::{Settings, SyncAuth};
 use atuin_common::encryption::paseto_v4;
 use atuin_common::env::var_nonempty;
 use clap::Parser;
-use eyre::{Context, Result, bail, eyre};
+use eyre::{Context, Result, bail};
 use rpassword::prompt_password;
 use secrecy::zeroize::Zeroizing;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::PasswordArg;
+use crate::error::CliError;
 use crate::i18n::fl;
 
 const KEY_ENV: &str = "ATUIN_ENCRYPTION_KEY";
@@ -314,7 +315,7 @@ async fn verify_key_against_remote(
             None => return store_key(settings, store, &key).await,
             Some(SyncError::WrongKey) => {
                 if !interactive {
-                    return Err(logout_wrong_key(settings).await);
+                    return Err(logout_wrong_key(settings).await.into());
                 }
 
                 println!("\n{}", fl!("login-key-mismatch"));
@@ -334,7 +335,7 @@ async fn verify_key_against_remote(
                         }
                     }
                     // A blank line or exhausted stdin both mean "give up".
-                    _ => return Err(logout_wrong_key(settings).await),
+                    _ => return Err(logout_wrong_key(settings).await.into()),
                 }
             }
             Some(e) => {
@@ -350,12 +351,12 @@ async fn verify_key_against_remote(
 
 /// Roll back the saved session so the user is not left in a half-authenticated
 /// state with a key that can't read the data, and get the error that says so.
-async fn logout_wrong_key(settings: &Settings) -> eyre::Report {
+async fn logout_wrong_key(settings: &Settings) -> CliError {
     if let Ok(meta) = settings.meta_store().await {
         let _ = meta.delete_session().await;
         let _ = meta.delete_hub_session().await;
     }
-    eyre!("{}", fl!("login-wrong-key-body"))
+    CliError::LoginWrongKey
 }
 
 #[must_use]
