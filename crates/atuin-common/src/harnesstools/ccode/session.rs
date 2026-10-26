@@ -918,6 +918,13 @@ impl CcodeMessage {
             && human_origin(queued.get("origin"))
     }
 
+    /// Whether a queued command is a message from another agent: the one that spawned this one
+    /// (`coordinator`) or a `peer`, through `SendMessage`. It prompts this agent, as a subagent's
+    /// task does.
+    fn queued_by_agent(queued: &serde_json::Value) -> bool {
+        matches!(queued["origin"]["kind"].as_str(), Some("coordinator" | "peer"))
+    }
+
     /// A user-role line Claude Code wrote itself rather than the user typing it. A subagent's
     /// first line is its task, even when it is `isMeta` (a forked skill's prompt).
     fn injected_user_line(&self) -> bool {
@@ -973,7 +980,9 @@ impl Message for CcodeMessage {
     fn role(&self) -> Role {
         if self.kind == "attachment" {
             return match self.queued_command() {
-                Some(queued) if Self::queued_by_user(queued) => Role::User,
+                Some(queued) if Self::queued_by_user(queued) || Self::queued_by_agent(queued) => {
+                    Role::User
+                }
                 Some(_) => Role::System,
                 None => Role::Other(self.kind.clone()),
             };
@@ -1868,6 +1877,10 @@ mod tests {
     #[rstest]
     #[case::origin_human(serde_json::json!({"origin": {"kind": "human"}}))]
     #[case::prompt_mode(serde_json::json!({"commandMode": "prompt"}))]
+    // From another agent through `SendMessage` (CC 2.1.310): it prompts this one.
+    #[case::coordinator(serde_json::json!({"isMeta": true, "origin": {"kind": "coordinator"}}))]
+    #[case::peer(serde_json::json!({"commandMode": "prompt", "isMeta": true,
+        "origin": {"kind": "peer", "from": "a1", "senderTaskId": "a1"}}))]
     fn queued_prompt_is_user_text(#[case] extra: serde_json::Value) {
         let mut attachment =
             serde_json::json!({"type": "queued_command", "prompt": "also check forks please"});
@@ -1883,7 +1896,6 @@ mod tests {
     /// Background task results are delivered through the same queue; they are not the user's.
     #[rstest]
     #[case::task_notification(serde_json::json!({"commandMode": "task-notification"}))]
-    #[case::peer(serde_json::json!({"origin": {"kind": "peer", "from": "a1"}}))]
     #[case::meta(serde_json::json!({"isMeta": true}))]
     fn queued_harness_message_is_system(#[case] extra: serde_json::Value) {
         let mut attachment = serde_json::json!({"type": "queued_command",
