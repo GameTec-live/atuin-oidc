@@ -92,10 +92,6 @@ use crate::harnesstools::session::model::{
 use crate::harnesstools::session::{Checkpoint, Message as _, MessageError};
 use crate::os::fs::FdIdentity;
 
-/// The first line of the prompt a subagent session starts with (`tool/plugin/subagent.ts`,
-/// `config/plugin/command.ts`): written by opencode, not typed by anyone.
-const SUBAGENT_PROMPT: &str = "You are a subagent spawned by another session.";
-
 /// Light rows a pass reads at a time.
 const ROWS: usize = 256;
 
@@ -605,15 +601,9 @@ impl Full {
         };
         let text = |key: &str| data[key].as_str().unwrap_or_default().to_owned();
         let (mut next, info) = match self.kind.as_str() {
-            "user" => {
-                let prompt = text("text");
-                let role = if prompt.starts_with(SUBAGENT_PROMPT) {
-                    Role::System
-                } else {
-                    Role::User
-                };
-                (said(role, vec![Content::Text(prompt)]), None)
-            }
+            // a subagent's prompt included: opencode writes its first line, the rest is the task
+            // the subagent was given (`tool/plugin/subagent.ts`)
+            "user" => (said(Role::User, vec![Content::Text(text("text"))]), None),
             // text opencode wrote into the conversation itself
             "synthetic" | "system" | "skill" => {
                 (said(Role::System, vec![Content::Text(text("text"))]), None)
@@ -637,9 +627,11 @@ impl Full {
                     Some("interrupted") => StopReason::Aborted,
                     _ => return None,
                 };
+                let error = &data["error"];
+                let error = error.is_object().then(|| Content::Error(error_text(error)));
                 let next = Next {
                     stop: Some(stop),
-                    ..said(Role::System, Vec::new())
+                    ..said(Role::System, error.into_iter().collect())
                 };
                 (next, None)
             }
@@ -746,7 +738,7 @@ impl Full {
         let (content, stop) = if data["status"] == "failed" {
             (vec![Content::Error(error_text(&data["error"]))], Some(StopReason::Error))
         } else {
-            (vec![Content::Summary(data["summary"].as_str().unwrap_or_default().to_owned())], None)
+            (vec![Content::Summary(summary_of(data))], None)
         };
         let next = Next {
             role: Role::Assistant,
@@ -757,6 +749,23 @@ impl Full {
         };
         (next, self.learned(data, &data["model"], "compaction", state))
     }
+}
+
+/// A completed compaction's summary: its `summary`, or, for a provider's own compaction, which
+/// leaves that empty, the summary in the window it replays instead (`native.messages`, as
+/// `compaction` parts). An encrypted one has no text to read.
+fn summary_of(data: &Value) -> String {
+    let summary = data["summary"].as_str().unwrap_or_default();
+    if !summary.is_empty() {
+        return summary.to_owned();
+    }
+    let messages = data["native"]["messages"].as_array().into_iter().flatten();
+    let parts = messages.flat_map(|message| message["content"].as_array().into_iter().flatten());
+    let texts: Vec<&str> = parts
+        .filter(|part| part["type"] == "compaction")
+        .filter_map(|part| part["text"].as_str())
+        .collect();
+    texts.join("\n\n")
 }
 
 /// What a message atuin wrote of session `session` says it was written from (see [`SOURCE`]),

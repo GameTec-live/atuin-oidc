@@ -453,7 +453,7 @@ fn normalised(kind: &str, data: &Value) -> Option<OpencodeMessage> {
 #[case::a_subagent_s_prompt(
     "user",
     json!({"text": "You are a subagent spawned by another session.\nsay hi"}),
-    Role::System,
+    Role::User,
     vec![Content::Text("You are a subagent spawned by another session.\nsay hi".into())],
 )]
 #[case::synthetic("synthetic", json!({"text": "t"}), Role::System, vec![Content::Text("t".into())])]
@@ -470,6 +470,15 @@ fn normalised(kind: &str, data: &Value) -> Option<OpencodeMessage> {
     json!({"status": "completed", "summary": "## Objective", "tokens": tokens_of(1, 2, 0)}),
     Role::Assistant,
     vec![Content::Summary("## Objective".into())],
+)]
+#[case::a_provider_s_compaction(
+    "compaction",
+    json!({"status": "completed", "reason": "auto", "summary": "", "native": {"messages": [
+        {"role": "user", "content": [{"type": "text", "text": "fix the bug"}]},
+        {"role": "assistant", "content": [{"type": "compaction", "provider": "anthropic", "text": "## Summary"}]},
+    ]}}),
+    Role::Assistant,
+    vec![Content::Summary("## Summary".into())],
 )]
 #[case::a_failed_compaction(
     "compaction",
@@ -511,6 +520,14 @@ fn a_turn_that_did_not_succeed_says_why(#[case] outcome: &str, #[case] stop: Sto
     let message = normalised("idle", &json!({"outcome": outcome})).unwrap();
     assert_eq!(message.stop_reason(), Some(stop));
     assert_eq!(message.role(), Role::System);
+}
+
+#[rstest]
+fn a_turn_that_failed_says_its_error() {
+    let data =
+        json!({"outcome": "failed", "error": {"type": "provider.auth", "message": "no key"}});
+    let message = normalised("idle", &data).unwrap();
+    assert_eq!(message.content(), vec![Content::Error("no key".into())]);
 }
 
 #[rstest]
@@ -1200,7 +1217,7 @@ async fn the_fixture_s_sessions_read_as_opencode_wrote_them(#[future] mixed: Db)
     let subagent = of(SUBAGENT);
     assert_eq!(subagent[0].parent_session().map(String::from).as_deref(), Some(NATIVE));
     assert_eq!(subagent[0].parent_kind(), Some(ParentKind::Subagent));
-    assert_eq!(subagent[1].role(), Role::System);
+    assert_eq!(subagent[1].role(), Role::User);
 
     // the fork names what it copied, and its copied calls are the native session's
     let fork = of(FORK);
