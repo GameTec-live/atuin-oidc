@@ -512,6 +512,8 @@ struct Full {
     data: Option<String>,
     /// Whether the row is opencode's copy of a 1.x message (see the module docs).
     migrated: bool,
+    /// For a session going idle, whether the call it ended on said why it failed already.
+    reported: bool,
 }
 
 impl<'r> sqlx::FromRow<'r, SqliteRow> for Full {
@@ -524,6 +526,7 @@ impl<'r> sqlx::FromRow<'r, SqliteRow> for Full {
             created: row.try_get_unchecked("time_created")?,
             data: text(row, "data")?,
             migrated: migrated.is_some_and(|migrated| migrated != 0),
+            reported: false,
         })
     }
 }
@@ -627,8 +630,11 @@ impl Full {
                     Some("interrupted") => StopReason::Aborted,
                     _ => return None,
                 };
+                // said already by the call the turn ended on, but for one that made none (a model
+                // that isn't there)
                 let error = &data["error"];
-                let error = error.is_object().then(|| Content::Error(error_text(error)));
+                let error = (error.is_object() && !self.reported)
+                    .then(|| Content::Error(error_text(error)));
                 let next = Next {
                     stop: Some(stop),
                     ..said(Role::System, error.into_iter().collect())
@@ -875,10 +881,16 @@ pub(super) async fn held(
         legacy,
         ..State::default()
     };
+    // whether the call each row's turn ended on so far carries an error (see `Full::reported`)
+    let mut reported = false;
     let rows = rows
         .into_iter()
-        .map(|full| {
+        .map(|mut full| {
             let parsed = full.data.as_deref().and_then(|data| json(data).ok()).unwrap_or_default();
+            full.reported = reported;
+            if matches!(full.kind.as_str(), "user" | "assistant" | "compaction") {
+                reported = parsed["error"].is_object();
+            }
             let settled = match full.kind.as_str() {
                 "assistant" => !parsed["time"]["completed"].is_null(),
                 "compaction" => parsed["status"] != "running",
@@ -1034,18 +1046,36 @@ impl Reads {
                               OR (m.type = 'synthetic' AND substr(l.id, 1, 16) = substr(m.id, 1, \
                               16)))) AS migrated FROM session_message m WHERE m.session_id = ?1 \
                               AND m.seq = ?2";
+        // whether the call a turn ended on carries an error (see `Full::reported`)
+        const REPORTED: &str = "SELECT json_type(data, '$.error') = 'object' FROM session_message \
+                                WHERE session_id = ?1 AND seq < ?2 AND type IN ('user', \
+                                'assistant', 'compaction') ORDER BY seq DESC LIMIT 1";
         let session = session.to_owned();
         self.read("2.0 row read", move |conn| {
             Box::pin(async move {
-                query_as::<Sqlite, Full>(if legacy {
+                let full = query_as::<Sqlite, Full>(if legacy {
                     LEGACY
                 } else {
                     PLAIN
                 })
-                .bind(session)
+                .bind(&session)
                 .bind(seq)
-                .fetch_optional(conn)
-                .await
+                .fetch_optional(&mut *conn)
+                .await?;
+                let Some(mut full) = full else {
+                    return Ok(None);
+                };
+                if full.kind != "idle" {
+                    return Ok(Some(full));
+                }
+                full.reported = query_scalar::<Sqlite, Option<bool>>(REPORTED)
+                    .bind(&session)
+                    .bind(seq)
+                    .fetch_optional(conn)
+                    .await?
+                    .flatten()
+                    .unwrap_or(false);
+                Ok(Some(full))
             })
         })
         .await

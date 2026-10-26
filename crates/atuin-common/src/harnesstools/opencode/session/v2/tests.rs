@@ -425,6 +425,7 @@ fn full(kind: &str, data: &Value) -> Full {
         created: Some(1),
         data: Some(data.to_string()),
         migrated: false,
+        reported: false,
     }
 }
 
@@ -807,6 +808,35 @@ proptest! {
         let after = checkpoint(Some((legacy, "a")), Some(Mark::of(next, "b")));
         prop_assert!(after.at > before.at);
     }
+}
+
+/// A failed turn says its error once: on the call it ended on, or, when it made none (a model
+/// that isn't there), on the session going idle.
+#[rstest]
+#[tokio::test]
+async fn a_failed_turn_says_its_error_once(#[future] db: Db) {
+    let db = db.await;
+    let error = json!({"type": "provider.free-limit", "message": "Free usage limit reached."});
+    db.session("ses_1", None, None).await;
+    db.append("ses_1", "msg_u1", "user", user("one")).await;
+    let mut failed = assistant("", true);
+    failed["content"] = json!([]);
+    failed["finish"] = json!("error");
+    failed["error"] = error.clone();
+    db.append("ses_1", "msg_a1", "assistant", failed).await;
+    db.append("ses_1", "msg_i1", "idle", json!({"outcome": "failed", "error": error})).await;
+    db.append("ses_1", "msg_u2", "user", user("two")).await;
+    let missing = json!({"type": "provider.no-route", "message": "Model unavailable: x/y"});
+    db.append("ses_1", "msg_i2", "idle", json!({"outcome": "failed", "error": missing})).await;
+
+    let rows = lines(&read_all(&db.path).await);
+    assert_eq!(rows[rows.len() - 5..], [
+        "User msg_u1: one",
+        "Assistant msg_a1: error Free usage limit reached.",
+        "System msg_i1: ",
+        "User msg_u2: two",
+        "System msg_i2: error Model unavailable: x/y",
+    ]);
 }
 
 /// A call's row is rewritten in place as it streams; only the row it settles as is delivered,
