@@ -120,6 +120,10 @@ database abstraction and adds no migrations.
 
 ## Configure the unmodified client
 
+Opening the server's public URL in a browser displays a small setup page, including
+the sync URL from `oidc.public_url` and the required Hub protocol setting. Requests
+that do not explicitly accept HTML retain the upstream root JSON API response.
+
 In `~/.config/atuin/config.toml`:
 
 ```toml
@@ -198,8 +202,9 @@ configuration; no extra auth database or server signing key exists.
 
 The implementation is in `crates/atuin-server/src/oidc.rs`, with its focused tests
 in `src/oidc/tests.rs`. Existing code changes are limited to server dependencies,
-optional settings, startup/router wiring, the non-password identity marker, and
-`oidc: None` in existing test fixtures. Client code, sync handlers, database queries,
+optional settings, startup/router wiring, the non-password identity marker, the
+browser landing page, and `oidc: None` in existing test fixtures. Client code,
+sync handlers, database queries,
 existing migrations, and upstream's Dockerfile are unchanged.
 
 The maintained branch is `oidc`; `upstream/main` tracks the original repository.

@@ -4,6 +4,8 @@ This fork adds OpenID Connect browser login to the upstream sync server using th
 unmodified client's Hub protocol. GitHub Actions publishes server images for
 **Linux amd64 and arm64** to `ghcr.io/gametec-live/atuin-oidc:latest` after tests pass.
 You do not need Rust or a local image build to run the server.
+Opening the server's public URL in a browser shows installation instructions and
+the client settings for that server.
 
 ## Quickstart with Docker Compose
 

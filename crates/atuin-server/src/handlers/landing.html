@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atuin — shell history sync</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.6; }
+    body { max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; }
+    h1 { margin-bottom: 0; }
+    h2 { margin-top: 2rem; font-size: 1.2rem; }
+    pre { padding: 1rem; border: 1px solid #8886; border-radius: .4rem; overflow-x: auto; }
+    code { font-family: ui-monospace, monospace; font-size: .9em; }
+    a { color: LinkText; }
+    footer { margin-top: 3rem; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Atuin</h1>
+    <p>Search your shell history and keep it in sync across your devices.
+      This is a self-hosted Atuin sync server. History contents are encrypted on
+      your devices before being synced.</p>
+
+    <h2>1. Install the client</h2>
+    <p>On Linux or macOS, install the official Atuin client:</p>
+    <pre><code>curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
+  | sh -s -- --non-interactive</code></pre>
+    <p>See the <a href="https://docs.atuin.sh/latest/guide/installation/">installation guide</a>
+      for Windows, package managers, and shell integration. Restart your shell after setup.</p>
+
+    <h2>2. Configure sync</h2>
+    <p>Add these top-level settings to <code>~/.config/atuin/config.toml</code>.
+      Use this server's public URL as <code>sync_address</code>:</p>
+    <pre><code>{{CONFIG}}</code></pre>
+
+    <h2>3. Sign in and sync</h2>
+    <pre><code>atuin login
+atuin sync</code></pre>
+    <p>{{LOGIN}}</p>
+    <p>If you are already signed in to another server, run <code>atuin logout</code> first.
+      Keep your Atuin encryption key and use the same key on every device.</p>
+    <p>To bring your existing shell history into Atuin, run <code>atuin import auto</code>,
+      then <code>atuin sync</code>. Use <kbd>Ctrl</kbd> + <kbd>R</kbd> to search your history.</p>
+  </main>
+  <footer><a href="https://atuin.sh/">About Atuin</a> ·
+    <a href="https://docs.atuin.sh/latest/guide/sync/">Sync documentation</a></footer>
+</body>
+</html>

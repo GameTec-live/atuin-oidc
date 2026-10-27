@@ -316,6 +316,63 @@ async fn environment() -> Environment {
 }
 
 #[rstest]
+#[case::client_default(None, false)]
+#[case::wildcard(Some("*/*"), false)]
+#[case::json(Some("application/json"), false)]
+#[case::browser(Some("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"), true)]
+#[case::html_quality(Some("text/html;q=0.8"), true)]
+#[case::html_disabled(Some("text/html;q=0,application/json"), false)]
+#[tokio::test]
+async fn root_serves_html_to_browsers_and_json_to_clients(
+    #[future(awt)] environment: Environment,
+    #[case] accept: Option<&str>,
+    #[case] html: bool,
+) {
+    let mut request = environment.browser.get(environment.address.append_path("").unwrap());
+    if let Some(accept) = accept {
+        request = request.header(header::ACCEPT, accept);
+    }
+    let response = request.send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::VARY], "Accept");
+    if html {
+        assert!(
+            response.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with("text/html")
+        );
+        let body = response.text().await.unwrap();
+        assert!(body.contains("sync_protocol = \"hub\""));
+        assert!(body.contains("atuin login"));
+        assert!(!body.contains("test-secret"));
+    } else {
+        let index = response.json::<atuin_domain::api::IndexResponse>().await.unwrap();
+        assert_eq!(index.version, env!("CARGO_PKG_VERSION"));
+        assert!(!index.homage.is_empty());
+    }
+}
+
+#[rstest]
+#[case("")]
+#[case("/atuin/a&b")]
+#[tokio::test]
+async fn landing_page_uses_the_public_url_and_escapes_config(#[case] prefix: &str) {
+    let env = Environment::new(prefix, 0).await;
+    let response = env
+        .browser
+        .get(env.address.append_path("").unwrap())
+        .header(header::ACCEPT, "text/html")
+        .header(header::HOST, "untrusted.example")
+        .header("x-forwarded-host", "untrusted.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.unwrap();
+    let address = env.address.as_str().trim_end_matches('/').replace('&', "&amp;");
+    assert!(body.contains(&format!("sync_address = \"{address}\"")));
+    assert!(!body.contains("untrusted.example"));
+}
+
+#[rstest]
 #[case("")]
 #[case("/atuin")]
 #[tokio::test]
