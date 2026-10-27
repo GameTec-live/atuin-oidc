@@ -5,7 +5,7 @@ Atuin sync server. The Atuin client is unchanged. It uses its existing Hub brows
 login and bearer authentication, then syncs with the normal server endpoints.
 This does not implement other hosted Hub services such as AI or billing.
 
-The upstream base is `b138f6c75c9f5d3d34566c518109b23844240e64` (workspace version
+The upstream base is `5e82ba214c1ffc71bc9c1bf658f94bcc257f43da` (workspace version
 18.24.2). Use an official Atuin client with `sync_protocol = "hub"` support
 (introduced in 18.13.0); 18.24.2 is the current compatibility target. Tests exercise
 the upstream Hub authentication and sync client libraries directly.
@@ -208,7 +208,7 @@ To move the patch onto a new upstream revision:
 ```sh
 git fetch upstream --tags
 git switch oidc
-git rebase --onto <new-upstream-tag-or-commit> b138f6c75c9f5d3d34566c518109b23844240e64
+git rebase --onto <new-upstream-tag-or-commit> 5e82ba214c1ffc71bc9c1bf658f94bcc257f43da
 ```
 
 Alternatively export the fork commits with `git format-patch` and apply them to
